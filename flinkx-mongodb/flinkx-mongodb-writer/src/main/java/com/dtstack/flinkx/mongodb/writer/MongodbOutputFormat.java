@@ -1,11 +1,31 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.dtstack.flinkx.mongodb.writer;
 
 import com.dtstack.flinkx.exception.WriteRecordException;
-import com.dtstack.flinkx.mongodb.Column;
 import com.dtstack.flinkx.mongodb.MongodbUtil;
 import com.dtstack.flinkx.outputformat.RichOutputFormat;
+import com.dtstack.flinkx.reader.MetaColumn;
 import com.dtstack.flinkx.writer.WriteMode;
+import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import org.apache.commons.lang.StringUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.types.Row;
@@ -13,15 +33,14 @@ import org.bson.Document;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.dtstack.flinkx.mongodb.MongodbConfigKeys.*;
-
 /**
+ * OutputFormat for mongodb writer plugin
+ *
+ * @Company: www.dtstack.com
  * @author jiangbo
- * @date 2018/6/5 21:17
  */
 public class MongodbOutputFormat extends RichOutputFormat {
 
@@ -35,49 +54,43 @@ public class MongodbOutputFormat extends RichOutputFormat {
 
     protected String collectionName;
 
-    protected List<Column> columns;
+    protected List<MetaColumn> columns;
 
     protected String replaceKey;
 
-    protected String mode = WriteMode.INSERT.getMode();
+    protected String mode;
 
-    private MongoCollection<Document> collection;
+    private transient MongoCollection<Document> collection;
+
+    private transient MongoClient client;
+
+    protected Map<String,Object> mongodbConfig;
 
     @Override
     public void configure(Configuration parameters) {
-        super.configure(parameters);
 
-        Map<String,String> config = new HashMap<>(4);
-        config.put(KEY_HOST_PORTS,hostPorts);
-        config.put(KEY_USERNAME,username);
-        config.put(KEY_PASSWORD,password);
-        config.put(KEY_DATABASE,database);
-
-        collection = MongodbUtil.getCollection(config,database,collectionName);
     }
 
     @Override
     protected void openInternal(int taskNumber, int numTasks) throws IOException {
-
+        client = MongodbUtil.getMongoClient(mongodbConfig);
+        MongoDatabase db = client.getDatabase(database);
+        collection = db.getCollection(collectionName);
     }
 
     @Override
     protected void writeSingleRecordInternal(Row row) throws WriteRecordException {
-        Document doc = MongodbUtil.convertRowToDoc(row,columns);
+        try {
+            Document doc = MongodbUtil.convertRowToDoc(row,columns);
 
-        if(WriteMode.INSERT.getMode().equals(mode)){
-            collection.insertOne(doc);
-        } else if(WriteMode.REPLACE.getMode().equals(mode) || WriteMode.UPDATE.getMode().equals(mode)){
-            if(StringUtils.isEmpty(replaceKey)){
-                throw new IllegalArgumentException("ReplaceKey cannot be empty when the write mode is replace");
+            if(WriteMode.INSERT.getMode().equals(mode)){
+                collection.insertOne(doc);
+            } else if(WriteMode.REPLACE.getMode().equals(mode) || WriteMode.UPDATE.getMode().equals(mode)){
+                Document filter = new Document(replaceKey,doc.get(replaceKey));
+                collection.findOneAndReplace(filter,doc);
             }
-
-            if(!doc.containsKey(replaceKey)){
-                throw new IllegalArgumentException("Cannot find replaceKey in the input fields");
-            }
-
-            Document filter = new Document(replaceKey,doc.get(replaceKey));
-            collection.findOneAndReplace(filter,doc);
+        } catch (Exception e){
+            throw new WriteRecordException("Writer data to mongodb error", e, 0, row);
         }
     }
 
@@ -99,7 +112,6 @@ public class MongodbOutputFormat extends RichOutputFormat {
 
     @Override
     public void closeInternal() throws IOException {
-        super.closeInternal();
-        MongodbUtil.close();
+        MongodbUtil.close(client, null);
     }
 }

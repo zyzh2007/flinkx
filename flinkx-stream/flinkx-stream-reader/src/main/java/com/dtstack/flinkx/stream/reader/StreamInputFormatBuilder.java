@@ -19,9 +19,9 @@
 package com.dtstack.flinkx.stream.reader;
 
 import com.dtstack.flinkx.inputformat.RichInputFormatBuilder;
+import com.dtstack.flinkx.reader.MetaColumn;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * @Company: www.dtstack.com
@@ -35,11 +35,11 @@ public class StreamInputFormatBuilder extends RichInputFormatBuilder {
         super.format = format = new StreamInputFormat();
     }
 
-    public void setSliceRecordCount(long sliceRecordCount){
+    public void setSliceRecordCount(List<Long> sliceRecordCount){
         format.sliceRecordCount = sliceRecordCount;
     }
 
-    public void setColumns(List<Map<String,Object>> columns){
+    public void setColumns(List<MetaColumn> columns){
         format.columns = columns;
     }
 

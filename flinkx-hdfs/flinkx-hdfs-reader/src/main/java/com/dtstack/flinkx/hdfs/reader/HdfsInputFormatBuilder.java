@@ -19,6 +19,8 @@
 package com.dtstack.flinkx.hdfs.reader;
 
 import com.dtstack.flinkx.inputformat.RichInputFormatBuilder;
+import com.dtstack.flinkx.reader.MetaColumn;
+
 import java.util.List;
 import java.util.Map;
 
@@ -39,29 +41,19 @@ public class HdfsInputFormatBuilder extends RichInputFormatBuilder {
             case "ORC":
                 format = new HdfsOrcInputFormat();
                 break;
+            case "PARQUET":
+                format = new HdfsParquetInputFormat();
+                break;
         }
         super.format = format;
     }
 
-    public void setHadoopConfig(Map<String,String> hadoopConfig) {
+    public void setHadoopConfig(Map<String,Object> hadoopConfig) {
         format.hadoopConfig = hadoopConfig;
     }
 
-    public void setColumnIndex(List<Integer> columnIndex) {
-        format.columnIndex = columnIndex;
-    }
-
-    public void setColumnValue(List<String> columnValue) {
-        format.columnValue = columnValue;
-    }
-
-    public void setColumnName(List<String> columnName) {
-        format.columnName = columnName;
-    }
-
-
-    public void setColumnType(List<String> columnType) {
-        format.columnType = columnType;
+    public void setMetaColumn(List<MetaColumn> metaColumn) {
+        format.metaColumns = metaColumn;
     }
 
     public void setInputPaths(String inputPaths) {
@@ -81,6 +73,8 @@ public class HdfsInputFormatBuilder extends RichInputFormatBuilder {
 
     @Override
     protected void checkFormat() {
-
+        if (format.getRestoreConfig() != null && format.getRestoreConfig().isRestore()){
+            throw new UnsupportedOperationException("This plugin not support restore from failed state");
+        }
     }
 }

@@ -25,10 +25,14 @@ import org.apache.flink.types.Row;
 import java.io.IOException;
 
 /**
+ * OutputFormat for stream writer
+ *
  * @Company: www.dtstack.com
  * @author jiangbo
  */
 public class StreamOutputFormat extends RichOutputFormat {
+
+    protected boolean print;
 
     @Override
     protected void openInternal(int taskNumber, int numTasks) throws IOException {
@@ -37,11 +41,26 @@ public class StreamOutputFormat extends RichOutputFormat {
 
     @Override
     protected void writeSingleRecordInternal(Row row) throws WriteRecordException {
-        // do nothing
+        if (print) {
+            System.out.println(String.format("subTaskIndex[%s]:%s", taskNumber, row));
+        }
+
+        if (restoreConfig.isRestore()) {
+            formatState.setState(row.getField(restoreConfig.getRestoreColumnIndex()));
+        }
     }
 
     @Override
     protected void writeMultipleRecordsInternal() throws Exception {
-        // do nothing
+        if (print) {
+            for (Row row : rows) {
+                System.out.println(row);
+            }
+        }
+
+        if (restoreConfig.isRestore()) {
+            Row row = rows.get(rows.size() - 1);
+            formatState.setState(row.getField(restoreConfig.getRestoreColumnIndex()));
+        }
     }
 }

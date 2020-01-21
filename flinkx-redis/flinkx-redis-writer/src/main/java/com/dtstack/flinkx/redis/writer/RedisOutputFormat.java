@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.dtstack.flinkx.redis.writer;
 
 import com.dtstack.flinkx.exception.WriteRecordException;
@@ -18,8 +36,10 @@ import java.util.*;
 import static com.dtstack.flinkx.redis.RedisConfigKeys.*;
 
 /**
+ * OutputFormat for writing data to redis database.
+ *
+ * @Company: www.dtstack.com
  * @author jiangbo
- * @date 2018/7/3 15:52
  */
 public class RedisOutputFormat extends RichOutputFormat {
 
@@ -47,7 +67,7 @@ public class RedisOutputFormat extends RichOutputFormat {
 
     private Jedis jedis;
 
-    private static SimpleDateFormat sdf = new SimpleDateFormat();
+    private SimpleDateFormat sdf;
 
     private static final int CRITICAL_TIME = 60 * 60 * 24 * 30;
 
@@ -63,7 +83,9 @@ public class RedisOutputFormat extends RichOutputFormat {
 
         jedis = JedisUtil.getJedis(properties);
 
-        sdf.applyPattern(dateFormat);
+        if (StringUtils.isNotBlank(dateFormat)){
+            sdf = new SimpleDateFormat(dateFormat);
+        }
     }
 
     @Override
@@ -107,7 +129,11 @@ public class RedisOutputFormat extends RichOutputFormat {
     private void processTimeFormat(Row row){
         for (int i = 0; i < row.getArity(); i++) {
             if(row.getField(i) instanceof Date){
-                row.setField(i,sdf.format((Date)row.getField(i)));
+                if (StringUtils.isNotBlank(dateFormat)){
+                    row.setField(i,sdf.format((Date)row.getField(i)));
+                }else {
+                    row.setField(i,((Date)row.getField(i)).getTime());
+                }
             }
         }
     }

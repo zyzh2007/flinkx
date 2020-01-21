@@ -18,8 +18,10 @@
 
 package com.dtstack.flinkx.hdfs.writer;
 
-import com.dtstack.flinkx.common.ColumnType;
+import com.dtstack.flinkx.enums.ColumnType;
 import com.dtstack.flinkx.exception.WriteRecordException;
+import com.dtstack.flinkx.hdfs.ECompressType;
+import com.dtstack.flinkx.hdfs.HdfsUtil;
 import com.dtstack.flinkx.util.DateUtil;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
@@ -30,6 +32,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 
 /**
@@ -41,30 +45,72 @@ import java.util.Date;
 public class HdfsTextOutputFormat extends HdfsOutputFormat {
 
     private static final int NEWLINE = 10;
-    protected transient OutputStream stream;
-    private long nLine = 0;
+    private transient OutputStream stream;
+
+    private static final int BUFFER_SIZE = 1000;
 
     @Override
-    public void open() throws IOException {
-        Path p  = new Path(tmpPath);
-        if(compress == null || compress.length() == 0) {
-            stream = fs.create(p);
-        } else if (compress.equalsIgnoreCase("GZIP")) {
-            tmpPath = tmpPath + ".gz";
-            p = new Path(tmpPath);
-            stream = new GzipCompressorOutputStream(fs.create(p));
-        } else if (compress.equalsIgnoreCase("BZIP2")) {
-            tmpPath = tmpPath + ".bz2";
-            p = new Path(tmpPath);
-            stream = new BZip2CompressorOutputStream(fs.create(p));
-        } else {
-            throw new IllegalArgumentException("Unsupported compress type: " + compress);
+    public void flushDataInternal() throws IOException {
+        LOG.info("Close current text stream, write data size:[{}]", bytesWriteCounter.getLocalValue());
+
+        if (stream != null){
+            stream.flush();
+            stream.close();
+            stream = null;
         }
     }
 
     @Override
-    public void writeSingleRecordInternal(Row row) throws WriteRecordException {
-        // write string to hdfs
+    public float getDeviation(){
+        ECompressType compressType = ECompressType.getByTypeAndFileType(compress, "text");
+        return compressType.getDeviation();
+    }
+
+    @Override
+    public String getExtension() {
+        ECompressType compressType = ECompressType.getByTypeAndFileType(compress, "text");
+        return compressType.getSuffix();
+    }
+
+    @Override
+    protected void nextBlock(){
+        super.nextBlock();
+
+        if (stream != null){
+            return;
+        }
+
+        try {
+            String currentBlockTmpPath = tmpPath + SP + currentBlockFileName;
+            Path p  = new Path(currentBlockTmpPath);
+
+            ECompressType compressType = ECompressType.getByTypeAndFileType(compress, "text");
+            if(ECompressType.TEXT_NONE.equals(compressType)){
+                stream = fs.create(p);
+            } else {
+                p = new Path(currentBlockTmpPath);
+                if (compressType == ECompressType.TEXT_GZIP){
+                    stream = new GzipCompressorOutputStream(fs.create(p));
+                } else if(compressType == ECompressType.TEXT_BZIP2){
+                    stream = new BZip2CompressorOutputStream(fs.create(p));
+                }
+            }
+
+            LOG.info("subtask:[{}] create block file:{}", taskNumber, currentBlockTmpPath);
+
+            blockIndex++;
+        } catch (Exception e){
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void writeSingleRecordToFile(Row row) throws WriteRecordException {
+
+        if(stream == null){
+            nextBlock();
+        }
+
         byte[] bytes = null;
         int i = 0;
         try {
@@ -85,77 +131,86 @@ public class HdfsTextOutputFormat extends HdfsOutputFormat {
                 Object column = row.getField(j);
 
                 if(column == null) {
+                    sb.append(HdfsUtil.NULL_VALUE);
                     continue;
                 }
 
                 String rowData = column.toString();
                 ColumnType columnType = ColumnType.fromString(columnTypes.get(j));
 
-                switch (columnType) {
-                    case TINYINT:
-                        sb.append(Byte.valueOf(rowData));
-                        break;
-                    case SMALLINT:
-                        sb.append(Short.valueOf(rowData));
-                        break;
-                    case INT:
-                        sb.append(Integer.valueOf(rowData));
-                        break;
-                    case BIGINT:
-                        BigInteger data = new BigInteger(rowData);
-                        if (data.compareTo(new BigInteger(String.valueOf(Long.MAX_VALUE))) > 0){
-                            sb.append(data);
-                        } else {
-                            sb.append(Long.valueOf(rowData));
-                        }
-                        break;
-                    case FLOAT:
-                        sb.append(Float.valueOf(rowData));
-                        break;
-                    case DOUBLE:
-                        sb.append(Double.valueOf(rowData));
-                        break;
-                    case DECIMAL:
-                        sb.append(HiveDecimal.create(new BigDecimal(rowData)));
-                        break;
-                    case STRING:
-                    case VARCHAR:
-                    case CHAR:
-                        sb.append(rowData);
-                        break;
-                    case BOOLEAN:
-                        sb.append(Boolean.valueOf(rowData));
-                        break;
-                    case DATE:
-                        if(column instanceof Date) {
-                            sb.append(DateUtil.dateToString((Date)column));
-                        } else {
-                            Date d = DateUtil.columnToDate(column);
-                            String s = DateUtil.dateToString(d);
-                            sb.append(s);
-                        }
-                        break;
-                    case TIMESTAMP:
-                        if(column instanceof Date) {
-                            sb.append(DateUtil.timestampToString((Date)column));
-                        } else {
-                            Date d = DateUtil.columnToTimestamp(column);
-                            String s = DateUtil.timestampToString(d);
-                            sb.append(s);
-                        }
-                        break;
-                    default:
-                        throw new IllegalArgumentException("Unsupported column type: " + columnType);
-                }
+                if(rowData.length() == 0){
+                    sb.append("");
+                } else {
+                    switch (columnType) {
+                        case TINYINT:
+                            sb.append(Byte.valueOf(rowData));
+                            break;
+                        case SMALLINT:
+                            sb.append(Short.valueOf(rowData));
+                            break;
+                        case INT:
+                            sb.append(Integer.valueOf(rowData));
+                            break;
+                        case BIGINT:
+                            if (column instanceof Timestamp){
+                                column=((Timestamp) column).getTime();
+                                sb.append(column);
+                                break;
+                            }
 
+                            BigInteger data = new BigInteger(rowData);
+                            if (data.compareTo(new BigInteger(String.valueOf(Long.MAX_VALUE))) > 0){
+                                sb.append(data);
+                            } else {
+                                sb.append(Long.valueOf(rowData));
+                            }
+                            break;
+                        case FLOAT:
+                            sb.append(Float.valueOf(rowData));
+                            break;
+                        case DOUBLE:
+                            sb.append(Double.valueOf(rowData));
+                            break;
+                        case DECIMAL:
+                            sb.append(HiveDecimal.create(new BigDecimal(rowData)));
+                            break;
+                        case STRING:
+                        case VARCHAR:
+                        case CHAR:
+                            if (column instanceof Timestamp){
+                                SimpleDateFormat fm = DateUtil.getDateTimeFormatter();
+                                sb.append(fm.format(column));
+                            }else {
+                                sb.append(rowData);
+                            }
+                            break;
+                        case BOOLEAN:
+                            sb.append(Boolean.valueOf(rowData));
+                            break;
+                        case DATE:
+                            column = DateUtil.columnToDate(column,null);
+                            sb.append(DateUtil.dateToString((Date) column));
+                            break;
+                        case TIMESTAMP:
+                            column = DateUtil.columnToTimestamp(column,null);
+                            sb.append(DateUtil.timestampToString((Date)column));
+                            break;
+                        default:
+                            throw new IllegalArgumentException("Unsupported column type: " + columnType);
+                    }
+                }
             }
 
             bytes = sb.toString().getBytes(this.charsetName);
             this.stream.write(bytes);
             this.stream.write(NEWLINE);
-            nLine++;
+            rowsOfCurrentBlock++;
 
-            if(nLine % 1000 == 0) {
+            if(restoreConfig.isRestore()){
+                lastRow = row;
+            }
+
+            if(rowsOfCurrentBlock % BUFFER_SIZE == 0) {
                 this.stream.flush();
             }
         } catch(Exception e) {
@@ -164,7 +219,6 @@ public class HdfsTextOutputFormat extends HdfsOutputFormat {
             }
             throw new WriteRecordException(e.getMessage(), e);
         }
-
     }
 
     @Override
@@ -173,7 +227,7 @@ public class HdfsTextOutputFormat extends HdfsOutputFormat {
     }
 
     @Override
-    public void closeInternal() throws IOException {
+    public void closeSource() throws IOException {
         OutputStream s = this.stream;
         if(s != null) {
             s.flush();

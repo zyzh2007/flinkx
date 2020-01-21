@@ -18,6 +18,7 @@
 
 package com.dtstack.flinkx.mysql;
 
+import com.dtstack.flinkx.enums.EDatabaseType;
 import com.dtstack.flinkx.rdb.BaseDatabaseMeta;
 import org.apache.commons.lang3.StringUtils;
 import java.util.ArrayList;
@@ -33,8 +34,8 @@ import java.util.Map;
 public class MySqlDatabaseMeta extends BaseDatabaseMeta {
 
     @Override
-    public String getDatabaseType() {
-        return "mysql";
+    public EDatabaseType getDatabaseType() {
+        return EDatabaseType.MySQL;
     }
 
     @Override
@@ -63,6 +64,11 @@ public class MySqlDatabaseMeta extends BaseDatabaseMeta {
     }
 
     @Override
+    public String quoteValue(String value, String column) {
+        return String.format("\"%s\" as %s",value,column);
+    }
+
+    @Override
     public String getReplaceStatement(List<String> column, List<String> fullColumn, String table, Map<String,List<String>> updateKey) {
         return "REPLACE INTO " + quoteTable(table)
                 + " (" + quoteColumns(column) + ") values "
@@ -88,51 +94,26 @@ public class MySqlDatabaseMeta extends BaseDatabaseMeta {
     }
 
     @Override
-    public String getMultiReplaceStatement(List<String> column, List<String> fullColumn, String table, int batchSize, Map<String,List<String>> updateKey) {
-        return "REPLACE INTO " + quoteTable(table)
-                + " (" + quoteColumns(column) + ") values "
-                + makeMultipleValues(column.size(), batchSize);
-    }
-
-    @Override
-    public String getMultiUpsertStatement(List<String> column, String table, int batchSize, Map<String,List<String>> updateKey) {
-        return "INSERT INTO " + quoteTable(table)
-                + " (" + quoteColumns(column) + ") values "
-                + makeMultipleValues(column.size(), batchSize)
-                + " ON DUPLICATE KEY UPDATE "
-                + makeUpdatePart(column);
-    }
-
-    @Override
     public String getSplitFilter(String columnName) {
-        return String.format("%s mod ? = ?", getStartQuote() + columnName + getEndQuote());
+        return String.format("%s mod ${N} = ${M}", getStartQuote() + columnName + getEndQuote());
     }
 
     @Override
-    public String getMultiInsertStatement(List<String> column, String table, int batchSize) {
-        return "INSERT INTO " + quoteTable(table)
-                + " (" + quoteColumns(column) + ") values "
-                + makeMultipleValues(column.size(), batchSize);
+    public String getSplitFilterWithTmpTable(String tmpTable, String columnName){
+        return String.format("%s.%s mod ${N} = ${M}", tmpTable, getStartQuote() + columnName + getEndQuote());
     }
 
     @Override
-    protected String makeValues(int nCols) {
+    public String getRowNumColumn(String orderBy) {
+        throw new RuntimeException("Not support row_number function");
+    }
+
+    private String makeValues(int nCols) {
         return "(" + StringUtils.repeat("?", ",", nCols) + ")";
     }
 
     @Override
     protected String makeValues(List<String> column) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    protected String makeMultipleValues(int nCols, int batchSize) {
-        String value = makeValues(nCols);
-        return StringUtils.repeat(value, ",", batchSize);
-    }
-
-    @Override
-    protected String makeMultipleValues(List<String> column, int batchSize) {
         throw new UnsupportedOperationException();
     }
 

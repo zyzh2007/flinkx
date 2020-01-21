@@ -19,7 +19,8 @@
 package com.dtstack.flinkx.hdfs.reader;
 
 import com.dtstack.flinkx.hdfs.HdfsUtil;
-import com.dtstack.flinkx.util.StringUtil;
+import com.dtstack.flinkx.reader.MetaColumn;
+import com.dtstack.flinkx.util.FileSystemUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.types.Row;
@@ -33,10 +34,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * The subclass of HdfsInputFormat which handles orc files
@@ -56,13 +54,15 @@ public class HdfsOrcInputFormat extends HdfsInputFormat {
 
     private transient List<? extends StructField> fields;
 
+    private static final String COMPLEX_FIELD_TYPE_SYMBOL_REGEX = ".*(<|>|\\{|}|[|]).*";
+
     @Override
     protected void configureAnythingElse() {
         orcSerde = new OrcSerde();
         inputFormat = new OrcInputFormat();
         org.apache.hadoop.hive.ql.io.orc.Reader reader = null;
         try {
-            FileSystem fs = FileSystem.get(conf);
+            FileSystem fs = FileSystemUtil.getFileSystem(hadoopConfig, defaultFS, jobId, "reader");
             OrcFile.ReaderOptions readerOptions = OrcFile.readerOptions(conf);
             readerOptions.filesystem(fs);
 
@@ -104,21 +104,24 @@ public class HdfsOrcInputFormat extends HdfsInputFormat {
             int endIndex = typeStruct.lastIndexOf(">");
             typeStruct = typeStruct.substring(startIndex, endIndex);
 
-            String[] cols = StringUtil.splitIgnoreQuotaBrackets(typeStruct,",");
+            if(typeStruct.matches(COMPLEX_FIELD_TYPE_SYMBOL_REGEX)){
+                throw new RuntimeException("Field types such as array, map, and struct are not supported.");
+            }
 
-            fullColNames = new String[cols.length];
-            fullColTypes = new String[cols.length];
+            List<String> cols = parseColumnAndType(typeStruct);
 
-            for(int i = 0; i < cols.length; ++i) {
-                String[] temp = cols[i].split(":");
+            fullColNames = new String[cols.size()];
+            fullColTypes = new String[cols.size()];
+
+            for(int i = 0; i < cols.size(); ++i) {
+                String[] temp = cols.get(i).split(":");
                 fullColNames[i] = temp[0];
                 fullColTypes[i] = temp[1];
             }
 
-            for(int j = 0; j < columnName.size(); ++j) {
-                if(columnName.get(j) != null) {
-                    columnIndex.set(j,name2index(columnName.get(j)));
-                }
+            for(int j = 0; j < metaColumns.size(); ++j) {
+                MetaColumn metaColumn = metaColumns.get(j);
+                metaColumn.setIndex(name2index(metaColumn.getName()));
             }
 
             Properties p = new Properties();
@@ -133,6 +136,24 @@ public class HdfsOrcInputFormat extends HdfsInputFormat {
         }
     }
 
+    private List<String> parseColumnAndType(String typeStruct){
+        List<String> cols = new ArrayList<>();
+        List<String> splits = Arrays.asList(typeStruct.split(","));
+        Iterator<String> it = splits.iterator();
+        while (it.hasNext()){
+            String current = it.next();
+            if(current.contains("(")){
+                if(current.contains("(")){
+                    String next = it.next();
+                    cols.add(current + "," + next);
+                }
+            } else {
+                cols.add(current);
+            }
+        }
+
+        return cols;
+    }
 
     @Override
     public HdfsOrcInputSplit[] createInputSplits(int minNumSplits) throws IOException {
@@ -180,22 +201,40 @@ public class HdfsOrcInputFormat extends HdfsInputFormat {
 
     @Override
     public Row nextRecordInternal(Row row) throws IOException {
-        row = new Row(columnIndex.size());
-        for(int i = 0; i < columnIndex.size(); ++i) {
-            Integer index = columnIndex.get(i);
-            String val = columnValue.get(i);
-            String type = columnType.get(i);
-            if(index != null) {
-                Object col = inspector.getStructFieldData(value, fields.get(index));
+        if(metaColumns.size() == 1 && "*".equals(metaColumns.get(0).getName())){
+            row = new Row(fullColNames.length);
+            for (int i = 0; i < fullColNames.length; i++) {
+                Object col = inspector.getStructFieldData(value, fields.get(i));
                 if (col != null) {
                     col = HdfsUtil.getWritableValue(col);
                 }
-                row.setField(i, HdfsUtil.string2col(String.valueOf(col),type));
-            } else if(val != null) {
-                Object col = HdfsUtil.string2col(val,type);
                 row.setField(i, col);
             }
+        } else {
+            row = new Row(metaColumns.size());
+            for (int i = 0; i < metaColumns.size(); i++) {
+                MetaColumn metaColumn = metaColumns.get(i);
+                Object val = null;
+
+                if(metaColumn.getIndex() != -1){
+                    val = inspector.getStructFieldData(value, fields.get(metaColumn.getIndex()));
+                    if (val == null && metaColumn.getValue() != null){
+                        val = metaColumn.getValue();
+                    }
+                } else if(metaColumn.getValue() != null){
+                    val = metaColumn.getValue();
+                }
+
+                if(val instanceof String || val instanceof org.apache.hadoop.io.Text){
+                    val = HdfsUtil.string2col(String.valueOf(val),metaColumn.getType(),metaColumn.getTimeFormat());
+                } else if(val != null){
+                    val = HdfsUtil.getWritableValue(val);
+                }
+
+                row.setField(i,val);
+            }
         }
+
         return row;
     }
 

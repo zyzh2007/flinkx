@@ -19,6 +19,8 @@
 package com.dtstack.flinkx.hdfs.reader;
 
 import com.dtstack.flinkx.inputformat.RichInputFormat;
+import com.dtstack.flinkx.reader.MetaColumn;
+import com.dtstack.flinkx.util.FileSystemUtil;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
@@ -35,15 +37,9 @@ import java.util.Map;
  */
 public abstract class HdfsInputFormat extends RichInputFormat {
 
-    protected Map<String,String> hadoopConfig;
+    protected Map<String,Object> hadoopConfig;
 
-    protected List<Integer> columnIndex;
-
-    protected List<String> columnValue;
-
-    protected List<String> columnType;
-
-    protected List<String> columnName;
+    protected List<MetaColumn> metaColumns;
 
     protected String inputPath;
 
@@ -72,19 +68,10 @@ public abstract class HdfsInputFormat extends RichInputFormat {
 
     @Override
     public void configure(Configuration parameters) {
-        conf = new JobConf();
-
-        if(hadoopConfig != null) {
-            for (Map.Entry<String, String> entry : hadoopConfig.entrySet()) {
-                conf.set(entry.getKey(), entry.getValue());
-            }
-        }
-        conf.set("fs.default.name", defaultFS);
-        conf.set("fs.hdfs.impl.disable.cache", "true");
+        conf = FileSystemUtil.getJobConf(hadoopConfig, defaultFS);
 
         configureAnythingElse();
     }
-
 
     @Override
     public InputSplit[] createInputSplits(int minNumSplits) throws IOException {

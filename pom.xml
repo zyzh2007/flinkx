@@ -19,19 +19,29 @@
         <module>flinkx-mysql</module>
         <module>flinkx-hbase</module>
         <module>flinkx-hdfs</module>
+        <module>flinkx-hive</module>
         <module>flinkx-oracle</module>
-        <module>flinkx-tests</module>
         <module>flinkx-sqlserver</module>
         <module>flinkx-redis</module>
         <module>flinkx-mongodb</module>
         <module>flinkx-postgresql</module>
         <module>flinkx-launcher</module>
         <module>flinkx-stream</module>
+        <module>flinkx-carbondata</module>
+        <module>flinkx-db2</module>
+        <module>flinkx-test</module>
+        <module>flinkx-gbase</module>
+        <module>flinkx-binlog</module>
+        <module>flinkx-kafka09</module>
+        <module>flinkx-kafka10</module>
+        <module>flinkx-kafka11</module>
+        <module>flinkx-kudu</module>
     </modules>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <scala.binary.version>2.10</scala.binary.version>
-        <flink.version>1.4.0</flink.version>
+        <flink.version>1.5.4</flink.version>
         <dev.path>${basedir}/dev</dev.path>
     </properties>
 
@@ -67,32 +77,28 @@
                     <destDir>flinkx-java-docs</destDir>
                 </configuration>
             </plugin>
-            <!--checkstyle-->
-            <!--<plugin>-->
-                <!--<groupId>org.apache.maven.plugins</groupId>-->
-                <!--<artifactId>maven-checkstyle-plugin</artifactId>-->
-                <!--<version>2.17</version>-->
-                <!--<configuration>-->
-                    <!--<configLocation>${dev.path}/javastyle-config.xml</configLocation>-->
-                    <!--<suppressionsLocation>${dev.path}/javastyle-suppressions.xml</suppressionsLocation>-->
-                    <!--<headerLocation>${dev.path}/java.header</headerLocation>-->
-                    <!--<consoleOutput>true</consoleOutput>-->
-                    <!--<failsOnError>true</failsOnError>-->
-                    <!--<linkXRef>false</linkXRef>-->
-                    <!--<failOnViolation>true</failOnViolation>-->
-                    <!--<includeTestSourceDirectory>false</includeTestSourceDirectory>-->
-                    <!--<sourceDirectory>${basedir}/src/main/java</sourceDirectory>-->
-                    <!--<testSourceDirectory>${basedir}/src/test/java</testSourceDirectory>-->
-                    <!--<outputFile>${basedir}/target/checkstyle-output.xml</outputFile>-->
-                <!--</configuration>-->
-                <!--<executions>-->
-                    <!--<execution>-->
-                        <!--<goals>-->
-                            <!--<goal>check</goal>-->
-                        <!--</goals>-->
-                    <!--</execution>-->
-                <!--</executions>-->
-            <!--</plugin>-->
+            <plugin>
+                <groupId>pl.project13.maven</groupId>
+                <artifactId>git-commit-id-plugin</artifactId>
+                <version>2.2.6</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <dateFormat>yyyy.MM.dd HH:mm:ss</dateFormat>
+                    <verbose>true</verbose>
+                    <generateGitPropertiesFile>true</generateGitPropertiesFile>
+                    <gitDescribe>
+                        <always>false</always>
+                        <dirty>-dirty</dirty>
+                        <forceLongFormat>false</forceLongFormat>
+                    </gitDescribe>
+                </configuration>
+            </plugin>
         </plugins>
 
     </build>

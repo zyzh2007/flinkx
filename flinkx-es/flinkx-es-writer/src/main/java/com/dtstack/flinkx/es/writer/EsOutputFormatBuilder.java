@@ -20,12 +20,13 @@ package com.dtstack.flinkx.es.writer;
 
 import com.dtstack.flinkx.outputformat.RichOutputFormatBuilder;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The Builder class of EsOutputFormat
  *
  * Company: www.dtstack.com
- * @author huyifan.zju@163.com
+ * @author huyifan_zju@163.com
  */
 public class EsOutputFormatBuilder extends RichOutputFormatBuilder {
 
@@ -67,9 +68,15 @@ public class EsOutputFormatBuilder extends RichOutputFormatBuilder {
         format.columnTypes = columnTypes;
     }
 
+    public EsOutputFormatBuilder setClientConfig(Map<String, Object> clientConfig){
+        format.clientConfig = clientConfig;
+        return this;
+    }
 
     @Override
     protected void checkFormat() {
-
+        if (format.getRestoreConfig() != null && format.getRestoreConfig().isRestore()){
+            throw new UnsupportedOperationException("This plugin not support restore from failed state");
+        }
     }
 }

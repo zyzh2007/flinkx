@@ -18,19 +18,18 @@
 
 package com.dtstack.flinkx.latch;
 
-import com.dtstack.flinkx.util.RetryUtil;
 import com.dtstack.flinkx.util.URLUtil;
 import com.google.gson.Gson;
 import com.google.gson.internal.LinkedTreeMap;
 import org.apache.flink.api.common.functions.RuntimeContext;
-import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.net.URL;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 
 /**
  * Distributed implementation of Latch
@@ -39,6 +38,9 @@ import java.util.concurrent.Callable;
  * @author huyifan.zju@163.com
  */
 public class MetricLatch extends Latch {
+
+    public static Logger LOG = LoggerFactory.getLogger(MetricLatch.class);
+
     private String metricName;
     private String[] monitorRoots;
     private String jobId;
@@ -46,19 +48,26 @@ public class MetricLatch extends Latch {
     private RuntimeContext context;
     private static final String METRIC_PREFIX = "latch-";
 
-    private boolean checkMonitorRoots() {
+    private void checkMonitorRoots() {
         boolean flag = false;
         int j = 0;
+        StringBuilder exceptionMsg = new StringBuilder();
         for(; j < monitorRoots.length; ++j) {
             String requestUrl = monitorRoots[j] + "/jobs/" + jobId + "/accumulators";
+            LOG.info("Monitor url:" + requestUrl);
             try(InputStream inputStream = URLUtil.open(requestUrl)) {
                 flag = true;
                 break;
             } catch (Exception e) {
-                e.printStackTrace();
+                exceptionMsg.append("Monitor url:").append(requestUrl).append("\n");
+                exceptionMsg.append("Error info:\n").append(e.getMessage()).append("\n");
+                LOG.error("Open monitor url error:{}",e);
             }
         }
-        return flag;
+
+        if (!flag){
+            throw new IllegalArgumentException(exceptionMsg.toString());
+        }
     }
 
     private int getIntMetricVal(String requestUrl) {
@@ -96,13 +105,7 @@ public class MetricLatch extends Latch {
             }
         }
 
-        if(!checkMonitorRoots()) {
-            String msg = "";
-            if(monitorRoots != null && monitorRoots.length >= 1) {
-                msg = monitorRoots[0];
-            }
-            throw new RuntimeException("Invalid monitors: " + msg);
-        }
+        checkMonitorRoots();
     }
 
 

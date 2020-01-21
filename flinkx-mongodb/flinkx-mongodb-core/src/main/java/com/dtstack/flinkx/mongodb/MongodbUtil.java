@@ -1,11 +1,31 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.dtstack.flinkx.mongodb;
 
+import com.dtstack.flinkx.enums.ColumnType;
 import com.dtstack.flinkx.exception.WriteRecordException;
+import com.dtstack.flinkx.reader.MetaColumn;
+import com.dtstack.flinkx.util.DateUtil;
 import com.dtstack.flinkx.util.TelnetUtil;
-import com.google.common.collect.Lists;
 import com.mongodb.*;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.MongoCursor;
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.flink.types.Row;
 import org.bson.Document;
@@ -13,6 +33,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -22,8 +45,10 @@ import java.util.regex.Pattern;
 import static com.dtstack.flinkx.mongodb.MongodbConfigKeys.*;
 
 /**
+ * Utilities for mongodb database connection and data format conversion
+ *
+ * @Company: www.dtstack.com
  * @author jiangbo
- * @date 2018/6/5 10:40
  */
 public class MongodbUtil {
 
@@ -35,94 +60,69 @@ public class MongodbUtil {
 
     private static final Integer DEFAULT_PORT = 27017;
 
-    private static final Integer ONE_SECOND = 1000;
+    private static final Integer DEFAULT_CONNECTIONS_PER_HOST = 100;
 
-    private static final Integer CONNECTIONS_PER_HOST = 100;
+    private static final Integer DEFAULT_THREADS_FOR_CONNECTION_MULTIPLIER = 100;
 
-    private static final Integer THREADS_FOR_CONNECTION_MULTIPLIER = 100;
+    private static final Integer DEFAULT_CONNECT_TIMEOUT = 10 * 1000;
 
-    private static final Integer CONNECT_TIMEOUT = 10 * ONE_SECOND;
+    private static final Integer DEFAULT_MAX_WAIT_TIME = 5 * 1000;
 
-    private static final Integer MAX_WAIT_TIME = 5 * ONE_SECOND;
-
-    private static  final Integer SOCKET_TIMEOUT = 0;
-
-    private static MongoClient mongoClient;
+    private static  final Integer DEFAULT_SOCKET_TIMEOUT = 0;
 
     /**
      * Get mongo client
-     * @param config
+     * @param mongodbConfig
      * @return MongoClient
      */
-    public static MongoClient getMongoClient(Map<String,String> config){
+    public static MongoClient getMongoClient(Map<String,Object> mongodbConfig){
+        MongoClient mongoClient;
         try{
-            if(mongoClient == null){
-                MongoClientOptions options = getOption();
-                List<ServerAddress> serverAddress = getServerAddress(config.get(KEY_HOST_PORTS));
-                String username = config.get(KEY_USERNAME);
-                String password = config.get(KEY_PASSWORD);
-                String database = config.get(KEY_DATABASE);
+            MongoClientOptions options = getOption(mongodbConfig);
+            List<ServerAddress> serverAddress = getServerAddress(MapUtils.getString(mongodbConfig, KEY_HOST_PORTS));
+            String username = MapUtils.getString(mongodbConfig, KEY_USERNAME);
+            String password = MapUtils.getString(mongodbConfig, KEY_PASSWORD);
+            String database = MapUtils.getString(mongodbConfig, KEY_DATABASE);
+            String url = MapUtils.getString(mongodbConfig, KEY_URL);
 
-                if(StringUtils.isEmpty(username)){
-                    mongoClient = new MongoClient(serverAddress,options);
-                } else {
-                    MongoCredential credential = MongoCredential.createScramSha1Credential(username, database, password.toCharArray());
-                    List<MongoCredential> credentials = Lists.newArrayList();
-                    credentials.add(credential);
+            if(StringUtils.isNotBlank(url)){
+                mongoClient = new MongoClient(new MongoClientURI(url));
+            }else if(StringUtils.isEmpty(username)){
+                mongoClient = new MongoClient(serverAddress,options);
+            } else {
+                MongoCredential credential = MongoCredential.createScramSha1Credential(username, database, password.toCharArray());
+                List<MongoCredential> credentials = new ArrayList<>();
+                credentials.add(credential);
 
-                    mongoClient = new MongoClient(serverAddress,credentials,options);
-                }
-
-
-                LOG.info("mongo客户端获取成功");
+                mongoClient = new MongoClient(serverAddress,credentials,options);
             }
+
+            LOG.info("Get mongodb client successful");
             return mongoClient;
         }catch (Exception e){
             throw new RuntimeException(e);
         }
     }
 
-    public static MongoDatabase getDatabase(Map<String,String> config,String database){
-        MongoClient client = getMongoClient(config);
-        return mongoClient.getDatabase(database);
-    }
+    public static void close(MongoClient mongoClient, MongoCursor<Document> cursor){
+        if (cursor != null){
+            LOG.info("Start close mongodb cursor");
+            cursor.close();
+            LOG.info("Close mongodb cursor successfully");
+        }
 
-    public static MongoCollection<Document> getCollection(Map<String,String> config,String database, String collection){
-        MongoClient client = getMongoClient(config);
-        MongoDatabase db = client.getDatabase(database);
-
-        return db.getCollection(collection);
-    }
-
-    public static void close(){
         if (mongoClient != null){
+            LOG.info("Start close mongodb client");
             mongoClient.close();
-            mongoClient = null;
+            LOG.info("Close mongodb client successfully");
         }
     }
 
-    public static Row convertDocTORow(Document doc,List<Column> columns){
-        Row row = new Row(columns.size());
-        for (int i = 0; i < columns.size(); i++) {
-            Column col= columns.get(i);
-            Object colVal = getSpecifiedTypeVal(doc,col.getName(),col.getType());
-            if (col.getSplitter() != null && col.getSplitter().length() > 0){
-                if(colVal instanceof List){
-                    colVal = StringUtils.join((List)colVal,col.getSplitter());
-                }
-            }
-
-            row.setField(i,colVal);
-        }
-
-        return row;
-    }
-
-    public static Document convertRowToDoc(Row row,List<Column> columns) throws WriteRecordException {
+    public static Document convertRowToDoc(Row row,List<MetaColumn> columns) throws WriteRecordException {
         Document doc = new Document();
         for (int i = 0; i < columns.size(); i++) {
-            Column column = columns.get(i);
-            Object val = convertField(row.getField(i));
+            MetaColumn column = columns.get(i);
+            Object val = convertField(row.getField(i),column);
             if (StringUtils.isNotEmpty(column.getSplitter())){
                 val = Arrays.asList(String.valueOf(val).split(column.getSplitter()));
             }
@@ -133,41 +133,14 @@ public class MongodbUtil {
         return doc;
     }
 
-    private static Object convertField(Object val){
+    private static Object convertField(Object val,MetaColumn column){
         if(val instanceof BigDecimal){
            val = ((BigDecimal) val).doubleValue();
         }
 
-        return val;
-    }
-
-    private static Object getSpecifiedTypeVal(Document doc,String key,String type){
-        if (!doc.containsKey(key)){
-            return null;
-        }
-
-        Object val;
-        switch (type.toLowerCase()){
-            case "string" :
-                val = doc.getString(key);
-                break;
-            case "int" :
-                val = doc.getInteger(key);
-                break;
-            case "long" :
-                val = doc.getLong(key);
-                break;
-            case "double" :
-                val = doc.getDouble(key);
-                break;
-            case "bool" :
-                val = doc.getBoolean(key);
-                break;
-            case "date" :
-                val = doc.getDate(key);
-                break;
-            default:
-                val = doc.get(key);
+        if (val instanceof Timestamp && !column.getType().equalsIgnoreCase(ColumnType.INTEGER.name())){
+            SimpleDateFormat format = DateUtil.getDateTimeFormatter();
+            val= format.format(val);
         }
 
         return val;
@@ -177,7 +150,7 @@ public class MongodbUtil {
      * parse server address from hostPorts string
      */
     private static List<ServerAddress> getServerAddress(String hostPorts) {
-        List<ServerAddress> addresses = Lists.newArrayList();
+        List<ServerAddress> addresses = new ArrayList<>();
 
         for (String hostPort : hostPorts.split(HOST_SPLIT_REGEX)) {
             if(hostPort.length() == 0){
@@ -200,13 +173,29 @@ public class MongodbUtil {
         return addresses;
     }
 
-    private static MongoClientOptions getOption(){
+    private static MongoClientOptions getOption(Map<String,Object> mongodbConfig){
         MongoClientOptions.Builder build = new MongoClientOptions.Builder();
-        build.connectionsPerHost(CONNECTIONS_PER_HOST);
-        build.threadsAllowedToBlockForConnectionMultiplier(THREADS_FOR_CONNECTION_MULTIPLIER);
-        build.connectTimeout(CONNECT_TIMEOUT);
-        build.maxWaitTime(MAX_WAIT_TIME);
-        build.socketTimeout(SOCKET_TIMEOUT);
+
+        int connectionsPerHost = MapUtils.getIntValue(mongodbConfig, KEY_CONNECTIONS_PERHOST, DEFAULT_CONNECTIONS_PER_HOST);
+        LOG.info("Mongodb config -- connectionsPerHost:" + connectionsPerHost);
+        build.connectionsPerHost(connectionsPerHost);
+
+        int threadsForConnectionMultiplier = MapUtils.getIntValue(mongodbConfig, KEY_THREADS_FOR_CONNECTION_MULTIPLIER, DEFAULT_THREADS_FOR_CONNECTION_MULTIPLIER);
+        LOG.info("Mongodb config -- threadsForConnectionMultiplier:" + threadsForConnectionMultiplier);
+        build.threadsAllowedToBlockForConnectionMultiplier(threadsForConnectionMultiplier);
+
+        int connectionTimeout = MapUtils.getIntValue(mongodbConfig, KEY_CONNECTION_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+        LOG.info("Mongodb config -- connectionTimeout:" + connectionTimeout);
+        build.connectTimeout(connectionTimeout);
+
+        int maxWaitTime = MapUtils.getIntValue(mongodbConfig, KEY_MAX_WAIT_TIME, DEFAULT_MAX_WAIT_TIME);
+        LOG.info("Mongodb config -- maxWaitTime:" + maxWaitTime);
+        build.maxWaitTime(maxWaitTime);
+
+        int socketTimeout = MapUtils.getIntValue(mongodbConfig, KEY_SOCKET_TIMEOUT, DEFAULT_SOCKET_TIMEOUT);
+        LOG.info("Mongodb config -- socketTimeout:" + socketTimeout);
+        build.maxWaitTime(socketTimeout);
+
         build.writeConcern(WriteConcern.UNACKNOWLEDGED);
         return build.build();
     }

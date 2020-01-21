@@ -19,6 +19,7 @@
 package com.dtstack.flinkx.odps.reader;
 
 import com.dtstack.flinkx.inputformat.RichInputFormatBuilder;
+import com.dtstack.flinkx.reader.MetaColumn;
 
 import java.util.List;
 import java.util.Map;
@@ -47,16 +48,8 @@ public class OdpsInputFormatBuilder extends RichInputFormatBuilder {
         format.tableName = tableName;
     }
 
-    public void setColumnName(List<String> columnName) {
-        format.columnName = columnName;
-    }
-
-    public void setColumnType(List<String> columnType) {
-        format.columnType = columnType;
-    }
-
-    public void setColumnValue(List<String> columnValue) {
-        format.columnValue = columnValue;
+    public void setMetaColumn(List<MetaColumn> metaColumns){
+        format.metaColumns = metaColumns;
     }
 
     public void setPartition(String partition) {
@@ -65,7 +58,9 @@ public class OdpsInputFormatBuilder extends RichInputFormatBuilder {
 
     @Override
     protected void checkFormat() {
-
+        if (format.getRestoreConfig() != null && format.getRestoreConfig().isRestore()){
+            throw new UnsupportedOperationException("This plugin not support restore from failed state");
+        }
     }
 
 

@@ -22,21 +22,15 @@ import com.dtstack.flinkx.exception.WriteRecordException;
 import com.dtstack.flinkx.util.DateUtil;
 import com.dtstack.flinkx.util.StringUtil;
 import com.dtstack.flinkx.util.TelnetUtil;
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.Preconditions;
 import org.apache.http.HttpHost;
-import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,7 +45,7 @@ import java.util.Map;
  */
 public class EsUtil {
 
-    public static RestHighLevelClient getClient(String address) {
+    public static RestHighLevelClient getClient(String address,Map<String,Object> config) {
         List<HttpHost> httpHostList = new ArrayList<>();
         String[] addr = address.split(",");
         for(String add : addr) {
@@ -59,44 +53,21 @@ public class EsUtil {
             TelnetUtil.telnet(pair[0], Integer.valueOf(pair[1]));
             httpHostList.add(new HttpHost(pair[0], Integer.valueOf(pair[1]), "http"));
         }
-        RestHighLevelClient client = new RestHighLevelClient(
-                RestClient.builder(httpHostList.toArray(new HttpHost[httpHostList.size()])));
+
+        RestClientBuilder builder = RestClient.builder(httpHostList.toArray(new HttpHost[httpHostList.size()]));
+
+        Integer timeout = MapUtils.getInteger(config, EsConfigKeys.KEY_TIMEOUT);
+        if (timeout != null){
+            builder.setMaxRetryTimeoutMillis(timeout * 1000);
+        }
+
+        String pathPrefix = MapUtils.getString(config, EsConfigKeys.KEY_PATH_PREFIX);
+        if (StringUtils.isNotEmpty(pathPrefix)){
+            builder.setPathPrefix(pathPrefix);
+        }
+
+        RestHighLevelClient client = new RestHighLevelClient(builder);
         return client;
-    }
-
-    public static SearchResponse search(RestHighLevelClient client, String query, int from, int size) {
-        SearchRequest searchRequest = new SearchRequest();
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.from(from);
-        sourceBuilder.size(size);
-
-        if(StringUtils.isNotBlank(query)) {
-            QueryBuilder qb = QueryBuilders.wrapperQuery(query);
-            sourceBuilder.query(qb);
-            searchRequest.source(sourceBuilder);
-        }
-
-        try {
-            return client.search(searchRequest);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static long searchCount(RestHighLevelClient client, String query) {
-        SearchResponse searchResponse = search(client, query, 0, 0);
-        return searchResponse.getHits().getTotalHits();
-    }
-
-    public static List<Map<String,Object>> searchContent(RestHighLevelClient client, String query, int from, int size) {
-        SearchResponse searchResponse = search(client, query, from, size);
-        SearchHits searchHits = searchResponse.getHits();
-        List<Map<String,Object>> resultList = new ArrayList<>();
-        for(SearchHit searchHit : searchHits) {
-            Map<String,Object> source = searchHit.getSourceAsMap();
-            resultList.add(source);
-        }
-        return resultList;
     }
 
     public static Row jsonMapToRow(Map<String,Object> map, List<String> fields, List<String> types, List<String> values) {
@@ -138,10 +109,10 @@ public class EsUtil {
                 String key = parts[parts.length - 1];
                 Object col = row.getField(i);
                 if(col != null) {
-                    Object value = StringUtil.col2string(col, types.get(i));
-                    currMap.put(key, value);
+                    col = StringUtil.string2col(String.valueOf(col), types.get(i), null);
                 }
 
+                currMap.put(key, col);
             }
         } catch(Exception ex) {
             String msg = "EsUtil.rowToJsonMap Writing record error: when converting field[" + i + "] in Row(" + row + ")";
@@ -188,7 +159,7 @@ public class EsUtil {
                 column = constantValue;
                 break;
             case "DATE":
-                column = DateUtil.stringToDate(constantValue);
+                column = DateUtil.stringToDate(constantValue,null);
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported column type: " + columnType);
@@ -196,6 +167,24 @@ public class EsUtil {
         return column;
     }
 
+    public static String[] getStringArray(Object value){
+        if(value == null){
+            return null;
+        }
 
+        if(value instanceof String){
+            String stringValue = value.toString();
+            return stringValue.split(",");
+        } else if(value instanceof List){
+            List list = (List)value;
+            String[] array = new String[list.size()];
+            for (int i = 0; i < list.size(); i++) {
+                array[i] = list.get(i).toString();
+            }
 
+            return array;
+        } else {
+            return new String[]{value.toString()};
+        }
+    }
 }

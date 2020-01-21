@@ -21,32 +21,41 @@ package com.dtstack.flinkx.stream.reader;
 import com.dtstack.flinkx.config.DataTransferConfig;
 import com.dtstack.flinkx.config.ReaderConfig;
 import com.dtstack.flinkx.reader.DataReader;
+import com.dtstack.flinkx.reader.MetaColumn;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.types.Row;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
+ * Read plugin for reading static data
+ *
  * @Company: www.dtstack.com
  * @author jiangbo
  */
 public class StreamReader extends DataReader {
 
-    private long sliceRecordCount;
+    private List<Long> sliceRecordCount;
 
-    private List<Map<String,Object>> columns;
-
-    /** -1 means no limit */
-    private static final long DEFAULT_SLICE_RECORD_COUNT = -1;
+    private List<MetaColumn> columns;
 
     public StreamReader(DataTransferConfig config, StreamExecutionEnvironment env) {
         super(config, env);
 
         ReaderConfig readerConfig = config.getJob().getContent().get(0).getReader();
-        sliceRecordCount = readerConfig.getParameter().getLongVal("sliceRecordCount",DEFAULT_SLICE_RECORD_COUNT);
-        columns = readerConfig.getParameter().getColumn();
+
+        sliceRecordCount = new ArrayList<>();
+        List list = (List)readerConfig.getParameter().getVal("sliceRecordCount");
+        if(CollectionUtils.isNotEmpty(list)){
+            for (Object item : list) {
+                sliceRecordCount.add(Long.valueOf(item.toString()));
+            }
+        }
+
+        columns = MetaColumn.getMetaColumns(readerConfig.getParameter().getColumn());
     }
 
     @Override
@@ -56,6 +65,7 @@ public class StreamReader extends DataReader {
         builder.setSliceRecordCount(sliceRecordCount);
         builder.setMonitorUrls(monitorUrls);
         builder.setBytes(bytes);
+        builder.setRestoreConfig(restoreConfig);
         return createInput(builder.finish(),"streamreader");
     }
 }

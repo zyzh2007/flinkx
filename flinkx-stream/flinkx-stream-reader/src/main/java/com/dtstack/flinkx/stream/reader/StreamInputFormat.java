@@ -19,6 +19,8 @@
 package com.dtstack.flinkx.stream.reader;
 
 import com.dtstack.flinkx.inputformat.RichInputFormat;
+import com.dtstack.flinkx.reader.MetaColumn;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.io.GenericInputSplit;
 import org.apache.flink.core.io.InputSplit;
@@ -26,7 +28,6 @@ import org.apache.flink.types.Row;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @Company: www.dtstack.com
@@ -36,30 +37,31 @@ public class StreamInputFormat extends RichInputFormat {
 
     protected static final long serialVersionUID = 1L;
 
-    private Row staticData;
-
     private long recordRead = 0;
 
-    protected long sliceRecordCount;
+    protected List<Long> sliceRecordCount;
 
-    protected List<Map<String,Object>> columns;
+    protected List<MetaColumn> columns;
+
+    private long channelRecordNum;
 
     @Override
     public void openInternal(InputSplit inputSplit) throws IOException {
-        staticData = new Row(columns.size());
-        for (int i = 0; i < columns.size(); i++) {
-            staticData.setField(i,columns.get(i).get("value"));
+        if(CollectionUtils.isNotEmpty(sliceRecordCount) && sliceRecordCount.size() > inputSplit.getSplitNumber()){
+            channelRecordNum = sliceRecordCount.get(inputSplit.getSplitNumber());
         }
+
+        LOG.info("The record number of channel:[{}] is [{}]", inputSplit.getSplitNumber(), channelRecordNum);
     }
 
     @Override
     public Row nextRecordInternal(Row row) throws IOException {
-        return staticData;
+        return MockDataUtil.getMockRow(columns);
     }
 
     @Override
     public boolean reachedEnd() throws IOException {
-        return ++recordRead > sliceRecordCount && sliceRecordCount > 0;
+        return ++recordRead > channelRecordNum && channelRecordNum > 0;
     }
 
     @Override

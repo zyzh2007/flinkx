@@ -79,16 +79,12 @@ under the License.
                         <configuration>
                             <artifactSet>
                                 <excludes>
-                                    <!--from com.dtstack.flinkx:core-->
-                                    <exclude>com.dtstack.flinkx:flinkx-core</exclude>
-                                    <exclude>com.dtstack.flinkx:flinkx-rdb</exclude>
-                                    <!--reader do not exclude gson-->
-                                    <!--from org.apache.flink:*-->
-                                    <exclude>org.apache.flink:*</exclude>
+                                    <!--<exclude>org.slf4j:slf4j-api</exclude>-->
+                                    <!--<exclude>log4j:log4j</exclude>-->
+                                    <!--<exclude>ch.qos.logback:*</exclude>-->
                                     <exclude>com.data-artisans:*</exclude>
                                     <exclude>org.scala-lang:*</exclude>
                                     <exclude>io.netty:*</exclude>
-                                    <exclude>org.slf4j:slf4j-api</exclude>
                                 </excludes>
                             </artifactSet>
                             <filters>
@@ -125,7 +121,7 @@ under the License.
                                     </fileset>
                                 </copy>
                                 <move file="${basedir}/../../plugins/hdfsreader/${project.name}-${project.version}.jar"
-                                        tofile="${basedir}/../../plugins/hdfsreader/${project.name}.jar" />
+                                        tofile="${basedir}/../../plugins/hdfsreader/${project.name}-${git.branch}.jar" />
                             </tasks>
                         </configuration>
                     </execution>

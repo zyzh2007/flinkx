@@ -18,10 +18,7 @@
 
 package com.dtstack.flinkx.hdfs.writer;
 
-import com.dtstack.flinkx.outputformat.RichOutputFormatBuilder;
-import org.apache.commons.lang.StringUtils;
-import java.nio.charset.Charset;
-import java.nio.charset.UnsupportedCharsetException;
+import com.dtstack.flinkx.outputformat.FileOutputFormatBuilder;
 import java.util.List;
 import java.util.Map;
 
@@ -31,7 +28,7 @@ import java.util.Map;
  * Company: www.dtstack.com
  * @author huyifan.zju@163.com
  */
-public class HdfsOutputFormatBuilder extends RichOutputFormatBuilder {
+public class HdfsOutputFormatBuilder extends FileOutputFormatBuilder {
 
     private HdfsOutputFormat format;
 
@@ -43,11 +40,14 @@ public class HdfsOutputFormatBuilder extends RichOutputFormatBuilder {
             case "ORC":
                 format = new HdfsOrcOutputFormat();
                 break;
+            case "PARQUET":
+                format = new HdfsParquetOutputFormat();
+                break;
             default:
                 throw new IllegalArgumentException("Unsupported HDFS file type: " + type);
         }
 
-        super.format = format;
+        super.setFormat(format);
     }
 
     public void setColumnNames(List<String> columnNames) {
@@ -58,7 +58,7 @@ public class HdfsOutputFormatBuilder extends RichOutputFormatBuilder {
         format.columnTypes = columnTypes;
     }
 
-    public void setHadoopConfig(Map<String,String> hadoopConfig) {
+    public void setHadoopConfig(Map<String,Object> hadoopConfig) {
         format.hadoopConfig = hadoopConfig;
     }
 
@@ -70,6 +70,10 @@ public class HdfsOutputFormatBuilder extends RichOutputFormatBuilder {
         format.delimiter = delimiter;
     }
 
+    public void setRowGroupSize(int rowGroupSize){
+        format.rowGroupSize = rowGroupSize;
+    }
+
     public void setFullColumnTypes(List<String> fullColumnTypes) {
         format.fullColumnTypes = fullColumnTypes;
     }
@@ -78,37 +82,9 @@ public class HdfsOutputFormatBuilder extends RichOutputFormatBuilder {
         format.defaultFS = defaultFS;
     }
 
-    public void setWriteMode(String writeMode) {
-        this.format.writeMode = StringUtils.isBlank(writeMode) ? "APPEND" : writeMode.toUpperCase();
-    }
-
-    public void setPath(String path) {
-        this.format.path = path;
-    }
-
-    public void setFileName(String fileName) {
-        format.fileName = fileName;
-    }
-
-    public void setCompress(String compress) {
-        format.compress = compress;
-    }
-
-    public void setCharSetName(String charsetName) {
-        if(StringUtil.isNotEmpty(charsetName)) {
-            if(!Charset.isSupported(charsetName)) {
-                throw new UnsupportedCharsetException("The charset " + charsetName + " is not supported.");
-            }
-            this.format.charsetName = charsetName;
-        }
-
-    }
-
     @Override
     protected void checkFormat() {
-        if (format.path == null || format.path.length() == 0) {
-            throw new IllegalArgumentException("No path supplied.");
-        }
+        super.checkFormat();
 
         if (format.defaultFS == null || format.defaultFS.length() == 0) {
             throw new IllegalArgumentException("No defaultFS supplied.");

@@ -18,8 +18,10 @@
 
 package com.dtstack.flinkx.oracle;
 
+import com.dtstack.flinkx.enums.EDatabaseType;
 import com.dtstack.flinkx.rdb.BaseDatabaseMeta;
-import org.apache.commons.lang.StringUtils;
+
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -29,17 +31,22 @@ import java.util.List;
  * @author huyifan.zju@163.com
  */
 public class OracleDatabaseMeta extends BaseDatabaseMeta {
+
     @Override
     public String quoteTable(String table) {
+        table = table.replace("\"","");
         String[] part = table.split("\\.");
         if(part.length == 2) {
             table = part[0] + "." + getStartQuote() + part[1] + getEndQuote();
+        } else {
+            table = getStartQuote() + table + getEndQuote();
         }
         return table;
     }
+
     @Override
-    public String getDatabaseType() {
-        return "oracle";
+    public EDatabaseType getDatabaseType() {
+        return EDatabaseType.Oracle;
     }
 
     @Override
@@ -58,28 +65,19 @@ public class OracleDatabaseMeta extends BaseDatabaseMeta {
     }
 
     @Override
+    public String quoteValue(String value, String column) {
+        return String.format("'%s' as %s",value,column);
+    }
+
+    @Override
     public String getSplitFilter(String columnName) {
-        return String.format("mod(%s, ?) = ?", getStartQuote() + columnName + getEndQuote());
+        return String.format("mod(%s, ${N}) = ${M}", getStartQuote() + columnName + getEndQuote());
     }
 
     @Override
-    protected String makeMultipleValues(int nCols, int batchSize) {
-        String value = makeValues(nCols);
-        return StringUtils.repeat(value, " UNION ALL ", batchSize);
+    public String getSplitFilterWithTmpTable(String tmpTable, String columnName) {
+        return String.format("mod(%s.%s, ${N}) = ${M}", tmpTable, getStartQuote() + columnName + getEndQuote());
     }
-
-    @Override
-    public String getMultiInsertStatement(List<String> column, String table, int batchSize) {
-        return "INSERT INTO " + quoteTable(table)
-                + " (" + quoteColumns(column) + ") "
-                + makeMultipleValues(column.size(), batchSize);
-    }
-
-    @Override
-    protected String makeValues(int nCols) {
-        return "SELECT " + StringUtils.repeat("?", ",", nCols) + " FROM DUAL";
-    }
-
 
     @Override
     protected String makeValues(List<String> column) {
@@ -95,12 +93,47 @@ public class OracleDatabaseMeta extends BaseDatabaseMeta {
     }
 
     @Override
+    protected String makeReplaceValues(List<String> column, List<String> fullColumn){
+        List<String> values = new ArrayList<>();
+        boolean contains = false;
+
+        for (String col : column) {
+            values.add("? " + quoteColumn(col));
+        }
+
+        for (String col : fullColumn) {
+            for (String c : column) {
+                if (c.equalsIgnoreCase(col)){
+                    contains = true;
+                    break;
+                }
+            }
+
+            if (contains){
+                contains = false;
+                continue;
+            } else {
+                values.add("null "  + quoteColumn(col));
+            }
+
+            contains = false;
+        }
+
+        return "SELECT " + org.apache.commons.lang3.StringUtils.join(values,",") + " FROM DUAL";
+    }
+
+    @Override
+    public String getRowNumColumn(String orderBy) {
+        return "rownum as FLINKX_ROWNUM";
+    }
+
+    @Override
     public int getFetchSize(){
         return 1000;
     }
 
     @Override
     public int getQueryTimeout(){
-        return 1000;
+        return 3000;
     }
 }
